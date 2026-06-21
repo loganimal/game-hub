@@ -34,11 +34,11 @@ const H = 600;
 canvas.width = W;
 canvas.height = H;
 
-const GRAVITY = 0.45;
+const GRAVITY = 0.4;
 const FLAP_VEL = -7.5;
 const PIPE_W = 52;
-const PIPE_GAP = 140;
-const PIPE_SPEED = 2.5;
+const PIPE_GAP = 155;
+const PIPE_SPEED = 2.0;
 const GROUND_H = 80;
 const BIRD_SIZE = 16;
 
@@ -139,7 +139,7 @@ function update() {
     }
 
     // pipes
-    if (frame % 90 === 0) spawnPipe();
+    if (frame % 100 === 0) spawnPipe();
 
     for (let i = pipes.length - 1; i >= 0; i--) {
       const p = pipes[i];
@@ -442,7 +442,7 @@ function handleInput(e) {
 
 canvas.addEventListener('click', handleInput);
 canvas.addEventListener('touchstart', handleInput);
-document.addEventListener('keydown', (e) => {
+document.addEventListener('keyup', (e) => {
   if (e.code === 'Space' || e.key === ' ') {
     e.preventDefault();
     handleInput();

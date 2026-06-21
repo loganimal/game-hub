@@ -19,7 +19,7 @@ import sys
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
 DIR = os.path.dirname(os.path.abspath(__file__))
-GAME_DIRS = ['flappy', 'lion-king', 'teenage-mutant-crocodile-ninja-fighters', 'template']
+GAME_DIRS = ['flappy', 'lion-king', 'battack', 'teenage-mutant-crocodile-ninja-fighters', 'template']
 
 
 def get_local_ip():
