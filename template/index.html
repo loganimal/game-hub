@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>New Game</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #111;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    overflow: hidden;
+    font-family: monospace;
+  }
+  canvas {
+    border: 2px solid #333;
+    image-rendering: pixelated;
+    max-width: 100vw;
+    max-height: 100vh;
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+// ============================================================
+//  GAME TEMPLATE  —  shared patterns for building new games
+//  Copy this file to start a new game. Each section is
+//  documented so you know what to change.
+// ============================================================
+
+// ─── CANVAS SETUP ───────────────────────────────────────────
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+const W = 480;           // game width (logical pixels)
+const H = 640;           // game height
+canvas.width = W;
+canvas.height = H;
+
+// ─── CONSTANTS ──────────────────────────────────────────────
+// Put all tunable numbers here so they're easy to tweak.
+const GROUND_Y = 560;    // y position of the ground
+const GRAVITY = 0.5;
+
+// ─── GAME STATE ─────────────────────────────────────────────
+// 'title' | 'playing' | 'dead'
+let state = 'title';
+let score = 0;
+let bestScore = parseInt(localStorage.getItem('gameBest')) || 0;
+let frame = 0;
+
+// ─── PLAYER ─────────────────────────────────────────────────
+const player = {
+  x: W / 2,
+  y: GROUND_Y,
+  w: 24,
+  h: 24,
+  vx: 0,
+  vy: 0,
+  speed: 4,
+  jumpPower: 10,
+  onGround: true,
+};
+
+// ─── PARTICLES ──────────────────────────────────────────────
+let particles = [];
+
+function spawnParticles(x, y, color, count, spread, speed) {
+  spread = spread || 4;
+  speed = speed || 3;
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const spd = Math.random() * speed + 1;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * spd,
+      vy: Math.sin(angle) * spd - 1,
+      life: 30 + Math.random() * 20,
+      maxLife: 50,
+      size: Math.random() * 3 + 2,
+      color,
+    });
+  }
+}
+
+function updateParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.1;
+    p.life--;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    ctx.globalAlpha = p.life / p.maxLife;
+    ctx.fillStyle = p.color;
+    ctx.fillRect(Math.round(p.x), Math.round(p.y), Math.round(p.size), Math.round(p.size));
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ─── INPUT ──────────────────────────────────────────────────
+// Track which keys are held down, plus a one-shot "pressed" check.
+const keys = {};
+const justPressed = {};
+
+window.addEventListener('keydown', e => {
+  if (!keys[e.code]) justPressed[e.code] = true;
+  keys[e.code] = true;
+  if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+    e.preventDefault();
+  }
+});
+window.addEventListener('keyup', e => {
+  keys[e.code] = false;
+});
+
+function consume(code) {
+  // Returns true once per key press, then resets.
+  if (justPressed[code]) {
+    justPressed[code] = false;
+    return true;
+  }
+  return false;
+}
+
+// Touch / click support for mobile
+canvas.addEventListener('click', () => handleInput());
+canvas.addEventListener('touchstart', e => { e.preventDefault(); handleInput(); });
+
+// ─── AUDIO (Web Audio API) ──────────────────────────────────
+let audioCtx = null;
+
+function initAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+
+function playBeep(freq, duration, type, volume) {
+  try {
+    initAudio();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    const t = audioCtx.currentTime;
+    osc.type = type || 'square';
+    osc.frequency.setValueAtTime(freq, t);
+    gain.gain.setValueAtTime(volume || 0.2, t);
+    gain.gain.exponentialRampToValueAtTime(0.01, t + (duration || 0.1));
+    osc.start(t);
+    osc.stop(t + (duration || 0.1));
+  } catch (_) {}
+}
+
+function playScore()  { playBeep(600, 0.08, 'sine'); }
+function playHit()   { playBeep(200, 0.12, 'sawtooth', 0.25); }
+function playJump()  { playBeep(300, 0.1, 'sine', 0.15); }
+function playDeath() { playBeep(150, 0.3, 'sawtooth', 0.25); }
+
+// ─── COLLISION ──────────────────────────────────────────────
+function rectOverlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x &&
+         a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+// ─── SCORE ──────────────────────────────────────────────────
+function addScore(points) {
+  score += points;
+  if (score > bestScore) {
+    bestScore = score;
+    localStorage.setItem('gameBest', bestScore);
+  }
+}
+
+// ─── RESET ──────────────────────────────────────────────────
+function resetGame() {
+  player.x = W / 2;
+  player.y = GROUND_Y;
+  player.vx = 0;
+  player.vy = 0;
+  player.onGround = true;
+  score = 0;
+  frame = 0;
+  particles = [];
+  // reset any game-specific state here
+}
+
+// ─── INPUT HANDLER (shared by keyboard + touch) ─────────────
+function handleInput() {
+  switch (state) {
+    case 'title':
+      state = 'playing';
+      resetGame();
+      break;
+    case 'playing':
+      // Jump (example action)
+      if (player.onGround) {
+        player.vy = -player.jumpPower;
+        player.onGround = false;
+        playJump();
+      }
+      break;
+    case 'dead':
+      state = 'title';
+      break;
+  }
+}
+
+// ─── UPDATE ─────────────────────────────────────────────────
+function update() {
+  frame++;
+
+  // ── Player input ──
+  if (state === 'playing') {
+    // Horizontal movement
+    player.vx = 0;
+    if (keys['ArrowLeft']) player.vx = -player.speed;
+    if (keys['ArrowRight']) player.vx = player.speed;
+
+    // Jump (Space or ArrowUp)
+    if (consume('Space') || consume('ArrowUp')) {
+      handleInput();
+    }
+
+    // Gravity
+    if (!player.onGround) {
+      player.vy += GRAVITY;
+    }
+
+    // Apply velocity
+    player.x += player.vx;
+    player.y += player.vy;
+
+    // Ground collision
+    if (player.y + player.h >= GROUND_Y) {
+      player.y = GROUND_Y - player.h;
+      player.vy = 0;
+      player.onGround = true;
+    }
+
+    // Ceiling
+    if (player.y < 0) {
+      player.y = 0;
+      player.vy = 0;
+    }
+
+    // Walls
+    if (player.x < 0) player.x = 0;
+    if (player.x + player.w > W) player.x = W - player.w;
+
+    // ── Example game logic: collectible coins ──
+    // Replace this with your own game logic.
+  }
+
+  // Particles always update
+  updateParticles();
+}
+
+// ─── DRAW ───────────────────────────────────────────────────
+function drawBackground() {
+  // Sky
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#1a1a2e');
+  grad.addColorStop(1, '#16213e');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Ground
+  ctx.fillStyle = '#2a2a3e';
+  ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+  ctx.fillStyle = '#3a3a4e';
+  ctx.fillRect(0, GROUND_Y, W, 4);
+}
+
+function drawPlayer() {
+  ctx.fillStyle = '#f5c842';
+  ctx.fillRect(Math.round(player.x), Math.round(player.y), player.w, player.h);
+  // Eye
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(Math.round(player.x + player.w - 8), Math.round(player.y + 4), 5, 5);
+  ctx.fillStyle = '#222';
+  ctx.fillRect(Math.round(player.x + player.w - 6), Math.round(player.y + 5), 3, 3);
+}
+
+function drawScore() {
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 32px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(score, W / 2, 50);
+}
+
+function drawTitleScreen() {
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 28px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('MY GAME', W / 2, H / 2 - 40);
+
+  ctx.font = '16px monospace';
+  ctx.fillStyle = '#999';
+  ctx.fillText('Click or press SPACE to start', W / 2, H / 2 + 20);
+
+  if (bestScore > 0) {
+    ctx.fillStyle = '#f7971e';
+    ctx.font = '14px monospace';
+    ctx.fillText('Best: ' + bestScore, W / 2, H / 2 + 60);
+  }
+}
+
+function drawGameOver() {
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 32px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('GAME OVER', W / 2, H / 2 - 20);
+
+  ctx.font = '18px monospace';
+  ctx.fillStyle = '#f7971e';
+  ctx.fillText('Score: ' + score, W / 2, H / 2 + 30);
+  ctx.fillStyle = '#888';
+  ctx.fillText('Best: ' + bestScore, W / 2, H / 2 + 60);
+
+  ctx.fillStyle = '#999';
+  ctx.font = '14px monospace';
+  ctx.fillText('Click to restart', W / 2, H / 2 + 100);
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  drawBackground();
+
+  switch (state) {
+    case 'title':
+      drawTitleScreen();
+      break;
+    case 'playing':
+      drawPlayer();
+      drawScore();
+      break;
+    case 'dead':
+      drawPlayer();
+      drawGameOver();
+      break;
+  }
+
+  drawParticles();
+}
+
+// ─── LOOP ───────────────────────────────────────────────────
+function gameLoop() {
+  update();
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+
+// ─── KEYBOARD SHORTCUTS ─────────────────────────────────────
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space' || e.key === 'Enter') {
+    if (state === 'dead') { state = 'title'; return; }
+    if (state === 'title') { handleInput(); return; }
+  }
+});
+
+// ─── START ──────────────────────────────────────────────────
+resetGame();
+gameLoop();
+</script>
+</body>
+</html>

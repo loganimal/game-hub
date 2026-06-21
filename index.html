@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rami and Razi's Game Hub</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0f0f1a;
+    color: #eee;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 20px 80px;
+  }
+  h1 {
+    font-size: 3rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, #f7971e, #ffd200);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 8px;
+    letter-spacing: -1px;
+  }
+  .subtitle {
+    color: #888;
+    font-size: 1.1rem;
+    margin-bottom: 40px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 24px;
+    width: 100%;
+    max-width: 900px;
+  }
+  .card {
+    background: #1a1a2e;
+    border-radius: 16px;
+    padding: 28px;
+    border: 1px solid #2a2a44;
+    transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+    display: flex;
+    flex-direction: column;
+  }
+  .card:hover {
+    transform: translateY(-4px);
+    border-color: #f7971e;
+    box-shadow: 0 8px 32px rgba(247,151,30,0.15);
+  }
+  .card-icon {
+    font-size: 2.5rem;
+    margin-bottom: 12px;
+  }
+  .card h2 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .card p {
+    color: #999;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    margin-bottom: 12px;
+    flex: 1;
+  }
+  .controls {
+    background: #12121e;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 0.8rem;
+    color: #777;
+    margin-bottom: 16px;
+    line-height: 1.6;
+  }
+  .controls kbd {
+    background: #2a2a44;
+    color: #ddd;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 0.78rem;
+  }
+  .play-btn {
+    display: inline-block;
+    background: linear-gradient(135deg, #f7971e, #ffd200);
+    color: #1a1a2e;
+    font-weight: 700;
+    font-size: 1rem;
+    padding: 10px 24px;
+    border-radius: 8px;
+    text-align: center;
+    text-decoration: none;
+    transition: opacity 0.2s;
+    cursor: pointer;
+  }
+  .play-btn:hover { opacity: 0.85; }
+  .btn-row { display: flex; gap: 8px; }
+  .play-btn, .dl-btn {
+    display: inline-block;
+    font-weight: 700;
+    font-size: 0.9rem;
+    padding: 10px 20px;
+    border-radius: 8px;
+    text-align: center;
+    text-decoration: none;
+    transition: opacity 0.2s;
+    cursor: pointer;
+  }
+  .play-btn {
+    background: linear-gradient(135deg, #f7971e, #ffd200);
+    color: #1a1a2e;
+    flex: 1;
+  }
+  .play-btn:hover { opacity: 0.85; }
+  .dl-btn {
+    background: #2a2a44;
+    color: #aaa;
+    border: 1px solid #3a3a5e;
+    flex: 0 0 auto;
+  }
+  .dl-btn:hover { background: #3a3a5e; color: #fff; }
+  .dl-all {
+    background: #1a3a2e;
+    border: 1px solid #2a5a3e;
+    color: #8cc;
+    display: inline-block;
+    font-weight: 700;
+    font-size: 0.95rem;
+    padding: 12px 32px;
+    border-radius: 8px;
+    text-decoration: none;
+    transition: opacity 0.2s;
+    margin-bottom: 16px;
+  }
+  .dl-all:hover { opacity: 0.8; }
+  .footer { color: #555; margin-top: 40px; font-size: 0.85rem; }
+  .footer a { color: #f7971e; }
+  .server-note {
+    background: #1a1a2e;
+    border: 1px solid #2a2a44;
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 28px;
+    max-width: 900px;
+    width: 100%;
+    color: #888;
+    font-size: 0.85rem;
+    line-height: 1.5;
+  }
+  .server-note code {
+    background: #2a2a44;
+    color: #ddd;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: monospace;
+    font-size: 0.82rem;
+  }
+</style>
+</head>
+<body>
+
+<div class="server-note" id="serverNote">
+  🖥 Running locally via <code>python3 server.py</code> &mdash;
+  your son opens <code id="serverUrl">http://YOUR_IP:8000</code> on his laptop.
+  <br>Or serve via <code>python3 -m http.server 8000</code> (no downloads).
+</div>
+
+<a class="dl-all" href="/download.zip">⬇ Download All Games (ZIP)</a>
+
+<h1>Rami and Razi's Game Hub</h1>
+<p class="subtitle">Pick a game to play</p>
+
+<div class="grid">
+
+  <div class="card">
+    <div class="card-icon">🐦</div>
+    <h2>Flappy Bird</h2>
+    <p>Tap or press SPACE to flap through the pipes. How far can you get?</p>
+    <div class="controls">
+      <kbd>SPACE</kbd> / <kbd>Click</kbd> &mdash; Flap
+    </div>
+    <div class="btn-row">
+      <a class="play-btn" href="flappy/index.html">▶ Play</a>
+      <a class="dl-btn" href="/download/flappy" download>⬇</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-icon">🦁</div>
+    <h2>Lion King of the Jungle</h2>
+    <p>A fighting game &mdash; defeat Turtle, Rabbit, and Bear to become king.</p>
+    <div class="controls">
+      <kbd>←</kbd> <kbd>→</kbd> Move &nbsp; <kbd>↑</kbd> Jump<br>
+      <kbd>Z</kbd> Punch &nbsp; <kbd>X</kbd> Kick &nbsp; <kbd>C</kbd> Roar
+    </div>
+    <div class="btn-row">
+      <a class="play-btn" href="lion-king/index.html">▶ Play</a>
+      <a class="dl-btn" href="/download/lion-king" download>⬇</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-icon">🐊</div>
+    <h2>TM Crocodile Ninja Fighters</h2>
+    <p>11-level platformer &mdash; choose a croc, collect noodles, fight bosses.</p>
+    <div class="controls">
+      <kbd>←</kbd> <kbd>→</kbd> Move &nbsp; <kbd>↑</kbd> Jump &nbsp; <kbd>Space</kbd> Attack<br>
+      <kbd>Shift</kbd> Ability &nbsp; <kbd>Z</kbd> Throw &nbsp; <kbd>G</kbd> God mode
+    </div>
+    <div class="btn-row">
+      <a class="play-btn" href="teenage-mutant-crocodile-ninja-fighters/index.html">▶ Play</a>
+      <a class="dl-btn" href="/download/teenage-mutant-crocodile-ninja-fighters" download>⬇</a>
+    </div>
+  </div>
+
+</div>
+
+<div class="footer">
+  New game? Copy <a href="template/index.html">template/index.html</a> and start from there.
+</div>
+
+</body>
+</html>
