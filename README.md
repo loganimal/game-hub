@@ -8,6 +8,7 @@ A collection of browser games for Rami and Razi. Each game is a standalone HTML/
 |------|-----------|
 | **Flappy Bird** | Tap/press SPACE to flap through pipes |
 | **Lion King of the Jungle** | Fighting game — beat Turtle, Rabbit and Bear |
+| **Battack** | Fly a bat with laser eyes through 4 levels of aliens and zombies |
 | **Teenage Mutant Crocodile Ninja Fighters** | 11-level platformer with bosses |
 
 ## Playing the Games
