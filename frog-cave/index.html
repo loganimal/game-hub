@@ -259,16 +259,16 @@ function update(){
 
   // Obstacles
   for(let i=obstacles.length-1;i>=0;i--){
-    const o=obstacles[i];
-    o.x-=o.speed;
-    if(state==='playing'&&frog.invincible<=0&&o(frog,o)){
+    const ob=obstacles[i];
+    ob.x-=ob.speed;
+    if(state==='playing'&&frog.invincible<=0&&o(frog,ob)){
       hp--;frog.invincible=30;frog.blink=15;
       sfxHurt();spawnParticles(frog.x+frog.w/2,frog.y+frog.h/2,'#f44',8,4,3);
       obstacles.splice(i,1);combo=0;
       if(hp<=0){state='dead';sfxDeath();if(score>bestScore){bestScore=score;localStorage.setItem('frogCaveBest',bestScore);}}
       continue;
     }
-    if(o.x+o.w<-30)obstacles.splice(i,1);
+    if(ob.x+ob.w<-30)obstacles.splice(i,1);
   }
 
   updateParticles();
