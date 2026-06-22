@@ -573,9 +573,10 @@ function loop(){
 }
 
 window.addEventListener('keydown',e=>{
-  if(e.code==='Space'||e.key==='Enter'){
+  if(e.code==='Space'||e.key==='Enter'||e.code==='ArrowUp'){
     if(state==='dead'){state='title';return;}
     if(state==='title'){state='playing';resetGame();return;}
+    if(state==='playing')handleInput();
   }
 });
 
