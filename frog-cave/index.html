@@ -70,6 +70,15 @@ window.addEventListener('keydown', e => {
   if (!keys[e.code]) justPressed[e.code] = true;
   keys[e.code] = true;
   if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
+
+  const action = e.code==='Space'||e.key==='Enter'||e.code==='ArrowUp';
+  if (!action) return;
+
+  if (state==='title') { state='playing'; resetGame(); return; }
+  if (state==='dead') { state='title'; return; }
+  if (state==='playing') {
+    if (frog.onGround) { frog.vy=-frog.jumpPower; frog.onGround=false; sfxJump(); }
+  }
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
 
@@ -78,8 +87,12 @@ function consume(code) {
   return false;
 }
 
-canvas.addEventListener('click', () => handleInput());
-canvas.addEventListener('touchstart', e => { e.preventDefault(); handleInput(); });
+canvas.addEventListener('click', () => {
+  if (state==='title') { state='playing'; resetGame(); return; }
+  if (state==='dead') { state='title'; return; }
+  if (state==='playing' && frog.onGround) { frog.vy=-frog.jumpPower; frog.onGround=false; sfxJump(); }
+});
+canvas.addEventListener('touchstart', e => { e.preventDefault(); canvas.click(); });
 
 let audioCtx = null;
 function initAudio() { if (!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)(); }
@@ -128,16 +141,6 @@ function resetGame(){
   frog.invincible=0;frog.blink=0;
   enemies=[];obstacles=[];particles=[];tongue=null;
   score=0;hp=3;frame=0;scrollSpeed=2;spawnTimer=0;scrollX=0;combo=0;comboTimer=0;
-}
-
-function handleInput(){
-  switch(state){
-    case 'title':state='playing';resetGame();break;
-    case 'playing':
-      if(frog.onGround){frog.vy=-frog.jumpPower;frog.onGround=false;sfxJump();}
-      break;
-    case 'dead':state='title';break;
-  }
 }
 
 function tongueTip(){
@@ -571,14 +574,6 @@ function loop(){
   draw();
   requestAnimationFrame(loop);
 }
-
-window.addEventListener('keydown',e=>{
-  if(e.code==='Space'||e.key==='Enter'||e.code==='ArrowUp'){
-    if(state==='dead'){state='title';return;}
-    if(state==='title'){state='playing';resetGame();return;}
-    if(state==='playing')handleInput();
-  }
-});
 
 resetGame();
 loop();
