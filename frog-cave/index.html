@@ -29,6 +29,8 @@
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 
+window.onerror=function(m){try{ctx.fillStyle='#f00';ctx.font='bold 14px monospace';ctx.fillText('ERR: '+m,10,20)}catch(_){}};
+
 const W = 480;
 const H = 640;
 canvas.width = W;
@@ -135,6 +137,11 @@ function drawParticles(){
 }
 
 function o(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;}
+
+function ep(cx,cy,rx,ry,rot){
+  ctx.save();ctx.translate(cx,cy);ctx.rotate(rot||0);
+  ctx.scale(1,Math.abs(ry/rx));ctx.arc(0,0,Math.abs(rx),0,Math.PI*2);ctx.restore();
+}
 
 function resetGame(){
   frog.y=GROUND_Y;frog.vy=0;frog.onGround=true;frog.tongueOut=false;frog.tongueTimer=0;
@@ -343,12 +350,12 @@ function drawFrog(){
 
   // Body
   ctx.fillStyle='#4a8a2a';
-  ctx.beginPath();ctx.ellipse(0,2,16,14,0,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ep(0,2,16,14,0);ctx.fill();
   ctx.strokeStyle='#2a5a1a';ctx.lineWidth=1.5;ctx.stroke();
 
   // Belly
   ctx.fillStyle='#6aaa3a';
-  ctx.beginPath();ctx.ellipse(0,5,10,8,0,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ep(0,5,10,8,0);ctx.fill();
 
   // Spots
   ctx.fillStyle='#3a6a1a';
@@ -378,12 +385,12 @@ function drawFrog(){
 
   // Back legs
   ctx.fillStyle='#3a7a1a';
-  ctx.beginPath();ctx.ellipse(-10,12,9,5,-0.3,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.ellipse(10,12,9,5,0.3,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ep(-10,12,9,5,-0.3);ctx.fill();
+  ctx.beginPath();ep(10,12,9,5,0.3);ctx.fill();
   // Feet
   ctx.fillStyle='#2a5a1a';
-  ctx.beginPath();ctx.ellipse(-14,14,5,3,-0.2,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.ellipse(14,14,5,3,0.2,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ep(-14,14,5,3,-0.2);ctx.fill();
+  ctx.beginPath();ep(14,14,5,3,0.2);ctx.fill();
 
   ctx.restore();
 
@@ -433,13 +440,13 @@ function drawFlies(){
 
     // Wings (above body, angled out)
     ctx.fillStyle='rgba(180,200,220,0.5)';
-    ctx.beginPath();ctx.ellipse(cx-7,cy-8+wingY,9,4,-0.4,0,Math.PI*2);ctx.fill();
-    ctx.beginPath();ctx.ellipse(cx+7,cy-8+wingY,9,4,0.4,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ep(cx-7,cy-8+wingY,9,4,-0.4);ctx.fill();
+    ctx.beginPath();ep(cx+7,cy-8+wingY,9,4,0.4);ctx.fill();
     ctx.shadowBlur=0;
 
     // Body (ellipse)
     ctx.fillStyle='#4a5a3a';
-    ctx.beginPath();ctx.ellipse(cx,cy,10,7,0,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ep(cx,cy,10,7,0);ctx.fill();
     // Abdomen stripes
     ctx.fillStyle='#5a6a4a';
     ctx.fillRect(cx-4,cy-1,3,3);
@@ -476,11 +483,11 @@ function drawObstacles(){
     }else{
       // Rock
       ctx.fillStyle='#4a4a4a';
-      ctx.beginPath();ctx.ellipse(ox+o.w/2,oy+o.h/2,o.w/2,o.h/2,0,0,Math.PI*2);ctx.fill();
+      ctx.beginPath();ep(ox+o.w/2,oy+o.h/2,o.w/2,o.h/2,0);ctx.fill();
       ctx.fillStyle='#5a5a5a';
-      ctx.beginPath();ctx.ellipse(ox+o.w/2-2,oy+o.h/2-3,o.w/3,o.h/3,0,0,Math.PI*2);ctx.fill();
+      ctx.beginPath();ep(ox+o.w/2-2,oy+o.h/2-3,o.w/3,o.h/3,0);ctx.fill();
       ctx.fillStyle='#3a3a3a';
-      ctx.beginPath();ctx.ellipse(ox+o.w/2+3,oy+o.h/2+2,o.w/4,o.h/4,0,0,Math.PI*2);ctx.fill();
+      ctx.beginPath();ep(ox+o.w/2+3,oy+o.h/2+2,o.w/4,o.h/4,0);ctx.fill();
     }
   }
 }
