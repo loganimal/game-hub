@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frog in a Cave</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #111;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    overflow: hidden;
+    font-family: monospace;
+  }
+  canvas {
+    border: 2px solid #333;
+    image-rendering: pixelated;
+    max-width: 100vw;
+    max-height: 100vh;
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+const W = 480;
+const H = 640;
+canvas.width = W;
+canvas.height = H;
+
+const GROUND_Y = 530;
+const GRAVITY = 0.55;
+const FROG_X = 80;
+
+let state = 'title';
+let score = 0;
+let bestScore = parseInt(localStorage.getItem('frogCaveBest')) || 0;
+let frame = 0;
+let enemies = [];
+let obstacles = [];
+let particles = [];
+let tongue = null;
+let hp = 3;
+let maxHp = 3;
+let scrollX = 0;
+let spawnTimer = 0;
+let scrollSpeed = 2;
+let blinkTimer = 0;
+let combo = 0;
+let comboTimer = 0;
+
+const frog = {
+  x: FROG_X, y: GROUND_Y, w: 32, h: 32,
+  vy: 0, jumpPower: 10.5, onGround: true,
+  tongueOut: false, tongueTimer: 0,
+  invincible: 0, blink: 0,
+  anim: 0,
+};
+
+const keys = {};
+const justPressed = {};
+
+window.addEventListener('keydown', e => {
+  if (!keys[e.code]) justPressed[e.code] = true;
+  keys[e.code] = true;
+  if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
+});
+window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+function consume(code) {
+  if (justPressed[code]) { justPressed[code] = false; return true; }
+  return false;
+}
+
+canvas.addEventListener('click', () => handleInput());
+canvas.addEventListener('touchstart', e => { e.preventDefault(); handleInput(); });
+
+let audioCtx = null;
+function initAudio() { if (!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)(); }
+function beep(f,d,t,v) {
+  try {
+    initAudio(); const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+    o.connect(g);g.connect(audioCtx.destination);
+    const n=audioCtx.currentTime;o.type=t||'square';o.frequency.setValueAtTime(f,n);
+    g.gain.setValueAtTime(v||0.2,n);g.gain.exponentialRampToValueAtTime(0.01,n+(d||0.1));
+    o.start(n);o.stop(n+(d||0.1));
+  }catch(_){}
+}
+function sfxJump(){beep(400,0.07,'sine',0.12);}
+function sfxTongue(){beep(700,0.04,'sine',0.1);}
+function sfxHit(){beep(200,0.1,'sawtooth',0.18);}
+function sfxKill(){beep(900,0.06,'square',0.12);}
+function sfxHurt(){beep(150,0.18,'sawtooth',0.2);}
+function sfxDeath(){beep(100,0.4,'sawtooth',0.3);}
+function sfxCombo(){beep(1100,0.05,'sine',0.1);}
+
+function spawnParticles(x,y,color,count,spread,speed){
+  spread=spread||4;speed=speed||3;
+  for(let i=0;i<count;i++){
+    const a=Math.random()*Math.PI*2,s=Math.random()*speed+1;
+    particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-1,life:20+Math.random()*15,maxLife:35,size:Math.random()*3+2,color});
+  }
+}
+function updateParticles(){
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];p.x+=p.vx;p.y+=p.vy;p.vy+=0.1;p.life--;
+    if(p.life<=0)particles.splice(i,1);
+  }
+}
+function drawParticles(){
+  for(const p of particles){
+    ctx.globalAlpha=p.life/p.maxLife;ctx.fillStyle=p.color;
+    ctx.fillRect(Math.round(p.x),Math.round(p.y),Math.round(p.size),Math.round(p.size));
+  }
+  ctx.globalAlpha=1;
+}
+
+function o(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y;}
+
+function resetGame(){
+  frog.y=GROUND_Y;frog.vy=0;frog.onGround=true;frog.tongueOut=false;frog.tongueTimer=0;
+  frog.invincible=0;frog.blink=0;
+  enemies=[];obstacles=[];particles=[];tongue=null;
+  score=0;hp=3;frame=0;scrollSpeed=2;spawnTimer=0;scrollX=0;combo=0;comboTimer=0;
+}
+
+function handleInput(){
+  switch(state){
+    case 'title':state='playing';resetGame();break;
+    case 'playing':
+      if(frog.onGround){frog.vy=-frog.jumpPower;frog.onGround=false;sfxJump();}
+      break;
+    case 'dead':state='title';break;
+  }
+}
+
+function tongueTip(){
+  if(!tongue)return null;
+  const p=1-tongue.timer/tongue.maxT;
+  const len=tongue.hit?tongue.maxLen*tongue.hitPos:tongue.maxLen*(p<0.5?p*2:2-p*2);
+  const tx=frog.x+frog.w+Math.cos(p*Math.PI*0.45)*len;
+  const ty=frog.y+8-Math.sin(p*Math.PI)*55;
+  return {x:tx,y:ty};
+}
+
+function spawnFly(){
+  const minY=80,maxY=GROUND_Y-80;
+  const h=minY+Math.random()*(maxY-minY);
+  enemies.push({
+    type:'fly',x:W+30,y:h,w:26,h:20,
+    hp:1,speed:scrollSpeed+Math.random()*0.6,
+    phase:Math.random()*Math.PI*2,amp:1+Math.random()*2,
+  });
+}
+
+function spawnObstacle(){
+  const t=Math.random()<0.6?'spike':'rock';
+  obstacles.push({
+    type:t,
+    x:W+20,
+    y:t==='spike'?GROUND_Y-24:GROUND_Y-16,
+    w:t==='spike'?20:30,
+    h:t==='spike'?24:16,
+    speed:scrollSpeed+0.2,
+  });
+}
+
+function update(){
+  frame++;
+  scrollX+=scrollSpeed;
+  blinkTimer++;
+
+  if(state!='playing'){updateParticles();return;}
+
+  // Difficulty
+  if(frame%300===0&&scrollSpeed<5)scrollSpeed+=0.2;
+
+  // Spawning
+  spawnTimer--;
+  if(spawnTimer<=0){
+    if(Math.random()<0.55||obstacles.length>3)spawnFly();
+    else spawnObstacle();
+    spawnTimer=Math.max(30,80/scrollSpeed+20+Math.random()*40);
+  }
+  if(frame%120===0&&Math.random()<0.5)spawnObstacle();
+
+  // Combo timer
+  if(comboTimer>0)comboTimer--;
+  else combo=0;
+
+  // Frog physics
+  if(!frog.onGround){frog.vy+=GRAVITY;frog.anim+=0.1;}
+  frog.y+=frog.vy;
+  if(frog.y+frog.h>=GROUND_Y){
+    frog.y=GROUND_Y-frog.h;frog.vy=0;frog.onGround=true;frog.anim=0;
+  }
+  if(frog.y<0){frog.y=0;frog.vy=0;}
+
+  if(frog.invincible>0)frog.invincible--;
+  if(frog.blink>0)frog.blink--;
+
+  // Tongue
+  if((consume('KeyZ')||consume('KeyX'))&&!frog.tongueOut){
+    tongue={timer:20,maxT:20,maxLen:130,hit:false,hitPos:0};
+    frog.tongueOut=true;frog.tongueTimer=25;sfxTongue();
+  }
+  if(tongue){
+    tongue.timer--;
+    const tip=tongueTip();
+    if(tip){
+      // Check fly hits
+      for(let i=enemies.length-1;i>=0;i--){
+        const e=enemies[i];
+        if(!tongue.hit&&o({x:tip.x-8,y:tip.y-8,w:16,h:16},e)){
+          e.hp--;tongue.hit=true;tongue.hitPos=1-tongue.timer/tongue.maxT;
+          enemies.splice(i,1);sfxKill();
+          spawnParticles(tip.x,tip.y,'#8f4',10,5,4);
+          combo++;comboTimer=60;
+          let pts=10;if(combo>2)pts+=combo*2;
+          score+=pts;
+          if(combo>=3){sfxCombo();}
+          break;
+        }
+      }
+    }
+    if(tongue.timer<=0){tongue=null;frog.tongueOut=false;}
+  }
+
+  // Enemies
+  for(let i=enemies.length-1;i>=0;i--){
+    const e=enemies[i];
+    e.x-=e.speed;
+    e.y+=Math.sin(frame*0.05+e.phase)*e.amp*0.3;
+    if(state==='playing'&&frog.invincible<=0&&o(frog,e)){
+      hp--;frog.invincible=30;frog.blink=15;
+      sfxHurt();spawnParticles(frog.x+frog.w/2,frog.y+frog.h/2,'#f44',8,4,3);
+      enemies.splice(i,1);
+      if(hp<=0){state='dead';sfxDeath();if(score>bestScore){bestScore=score;localStorage.setItem('frogCaveBest',bestScore);}}
+      continue;
+    }
+    if(e.x+e.w<-30)enemies.splice(i,1);
+  }
+
+  // Obstacles
+  for(let i=obstacles.length-1;i>=0;i--){
+    const o=obstacles[i];
+    o.x-=o.speed;
+    if(state==='playing'&&frog.invincible<=0&&o(frog,o)){
+      hp--;frog.invincible=30;frog.blink=15;
+      sfxHurt();spawnParticles(frog.x+frog.w/2,frog.y+frog.h/2,'#f44',8,4,3);
+      obstacles.splice(i,1);combo=0;
+      if(hp<=0){state='dead';sfxDeath();if(score>bestScore){bestScore=score;localStorage.setItem('frogCaveBest',bestScore);}}
+      continue;
+    }
+    if(o.x+o.w<-30)obstacles.splice(i,1);
+  }
+
+  updateParticles();
+}
+
+// ─── DRAW ───────────────────────────────────────────────────
+
+function drawBackground(){
+  // Cave dark
+  const g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#08080e');g.addColorStop(0.4,'#10101a');g.addColorStop(0.8,'#141420');g.addColorStop(1,'#0a0a14');
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+
+  // Distant stalactites
+  ctx.fillStyle='#12121e';
+  for(let i=0;i<6;i++){
+    const sx=((i*87-scrollX*0.2)%(W+100))-50,sh=25+Math.sin(i*2.7)*12;
+    ctx.beginPath();ctx.moveTo(sx-18,0);ctx.lineTo(sx+18,0);ctx.lineTo(sx,sh);ctx.closePath();ctx.fill();
+  }
+
+  // Stalactites
+  ctx.fillStyle='#1a1a2e';
+  for(let i=0;i<5;i++){
+    const sx=((i*103-scrollX*0.5)%(W+80))-40,sh=30+Math.sin(i*3.1)*18;
+    ctx.beginPath();ctx.moveTo(sx-14,0);ctx.lineTo(sx+14,0);ctx.lineTo(sx,sh);ctx.closePath();ctx.fill();
+  }
+
+  // Cave wall texture
+  ctx.fillStyle='rgba(30,30,50,0.2)';
+  for(let i=0;i<8;i++){
+    const wx=((i*57-scrollX*0.3)%(W+60))-30,wy=60+Math.sin(i*1.3)*40;
+    ctx.fillRect(wx,wy,6+Math.sin(i)*4,4+Math.cos(i)*3);
+  }
+
+  // Glowworms on ceiling
+  ctx.fillStyle='#aef';ctx.shadowColor='#8cf';ctx.shadowBlur=8;
+  for(let i=0;i<3;i++){
+    const gx=((i*131-scrollX*0.1)%(W+40))-20,gy=8+Math.sin(i*4.3)*6;
+    ctx.beginPath();ctx.arc(gx,gy,2+Math.sin(frame*0.03+i)*0.5,0,Math.PI*2);ctx.fill();
+  }
+  ctx.shadowBlur=0;
+
+  // Ground
+  ctx.fillStyle='#2a1a0e';ctx.fillRect(0,GROUND_Y,W,H-GROUND_Y);
+  ctx.fillStyle='#1a0e06';ctx.fillRect(0,GROUND_Y,W,3);
+  // Dirt detail
+  for(let x=0;x<W;x+=8){
+    const dx=(x-Math.round(scrollX)%8+8)%8;
+    ctx.fillStyle=(Math.floor(x/8+scrollX/8))%3===0?'#35241a':'#2a1a0e';
+    ctx.fillRect(dx,GROUND_Y+3,8,6);
+  }
+  // Ground top line
+  ctx.fillStyle='#4a3a2a';ctx.fillRect(0,GROUND_Y,W,2);
+  // Moss
+  ctx.fillStyle='#2a5a2a';
+  for(let i=0;i<12;i++){
+    const mx=((i*43-scrollX*0.6)%(W+50))-25;
+    ctx.fillRect(mx,GROUND_Y-2,8+Math.sin(i*2.1)*4,4);
+  }
+
+  // Drip particle hint
+  if(frame%40===0){
+    const dx=Math.random()*W;
+    particles.push({x:dx,y:10,vx:0,vy:0.5,life:60,maxLife:60,size:2,color:'#bef'});
+  }
+}
+
+function drawFrog(){
+  const fx=Math.round(frog.x),fy=Math.round(frog.y);
+
+  if(frog.blink>0&&frog.blink%4<2)return;
+
+  ctx.save();
+  ctx.translate(fx+16,fy+16);
+
+  // Body squish on jump
+  const squash=frog.onGround?1:0.85+Math.sin(frog.anim)*0.05;
+  ctx.scale(1,squash);
+
+  // Body
+  ctx.fillStyle='#4a8a2a';
+  ctx.beginPath();ctx.ellipse(0,2,16,14,0,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle='#2a5a1a';ctx.lineWidth=1.5;ctx.stroke();
+
+  // Belly
+  ctx.fillStyle='#6aaa3a';
+  ctx.beginPath();ctx.ellipse(0,5,10,8,0,0,Math.PI*2);ctx.fill();
+
+  // Spots
+  ctx.fillStyle='#3a6a1a';
+  ctx.beginPath();ctx.arc(-8,-2,3,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(6,0,2.5,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(-4,8,2,0,Math.PI*2);ctx.fill();
+
+  // Eyes (big bulging)
+  const eyeBrow=Math.sin(blinkTimer*0.05)*0.5+2;
+  ctx.fillStyle='#fff';ctx.strokeStyle='#3a6a1a';ctx.lineWidth=1.5;
+  // Left eye
+  ctx.beginPath();ctx.arc(-8,-12+eyeBrow,7,0,Math.PI*2);ctx.fill();ctx.stroke();
+  // Right eye
+  ctx.beginPath();ctx.arc(8,-12+eyeBrow,7,0,Math.PI*2);ctx.fill();ctx.stroke();
+  // Pupils
+  ctx.fillStyle='#1a1a1a';
+  ctx.beginPath();ctx.arc(-7,-11+eyeBrow,3.5,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(9,-11+eyeBrow,3.5,0,Math.PI*2);ctx.fill();
+  // Eye shine
+  ctx.fillStyle='#fff';
+  ctx.beginPath();ctx.arc(-6,-13+eyeBrow,1.5,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(10,-13+eyeBrow,1.5,0,Math.PI*2);ctx.fill();
+
+  // Mouth
+  ctx.strokeStyle='#2a5a1a';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.arc(10,5,5,-0.3,0.5);ctx.stroke();
+
+  // Back legs
+  ctx.fillStyle='#3a7a1a';
+  ctx.beginPath();ctx.ellipse(-10,12,9,5,-0.3,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.ellipse(10,12,9,5,0.3,0,Math.PI*2);ctx.fill();
+  // Feet
+  ctx.fillStyle='#2a5a1a';
+  ctx.beginPath();ctx.ellipse(-14,14,5,3,-0.2,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.ellipse(14,14,5,3,0.2,0,Math.PI*2);ctx.fill();
+
+  ctx.restore();
+
+  // Tongue
+  drawTongue();
+}
+
+function drawTongue(){
+  if(!tongue)return;
+  const tip=tongueTip();
+  if(!tip)return;
+  const sx=frog.x+30,sy=frog.y+10;
+
+  // Tongue shadow
+  ctx.strokeStyle='rgba(0,0,0,0.2)';ctx.lineWidth=6;ctx.lineCap='round';
+  ctx.beginPath();const mdx=(sx+tip.x)/2, mdy=(sy+tip.y)/2-6;
+  ctx.moveTo(sx,sy);ctx.quadraticCurveTo(mdx+2,mdy+2,tip.x+1,tip.y+1);ctx.stroke();
+
+  // Tongue
+  ctx.strokeStyle='#e84a6a';ctx.lineWidth=5;ctx.lineCap='round';
+  ctx.beginPath();ctx.moveTo(sx,sy);ctx.quadraticCurveTo(mdx,mdy,tip.x,tip.y);ctx.stroke();
+
+  // Tongue highlight
+  ctx.strokeStyle='rgba(255,200,220,0.3)';ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(sx-1,sy-1);ctx.quadraticCurveTo(mdx-2,mdy-3,tip.x-2,tip.y-2);ctx.stroke();
+
+  // Tip
+  ctx.fillStyle='#e84a6a';
+  ctx.beginPath();ctx.arc(tip.x,tip.y,5,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='rgba(255,200,220,0.4)';
+  ctx.beginPath();ctx.arc(tip.x-1,tip.y-1,2.5,0,Math.PI*2);ctx.fill();
+
+  // Fork
+  ctx.strokeStyle='#e84a6a';ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(tip.x,tip.y);ctx.lineTo(tip.x+7,tip.y-5);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(tip.x,tip.y);ctx.lineTo(tip.x+7,tip.y+5);ctx.stroke();
+}
+
+function drawFlies(){
+  for(const e of enemies){
+    const fx=Math.round(e.x),fy=Math.round(e.y);
+    const cx=fx+e.w/2, cy=fy+e.h/2;
+    const wingY=Math.sin(frame*0.4+e.phase)*3;
+
+    // Glow (zombie aura)
+    ctx.shadowColor='rgba(100,200,100,0.15)';ctx.shadowBlur=10;
+
+    // Wings (above body, angled out)
+    ctx.fillStyle='rgba(180,200,220,0.5)';
+    ctx.beginPath();ctx.ellipse(cx-7,cy-8+wingY,9,4,-0.4,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.ellipse(cx+7,cy-8+wingY,9,4,0.4,0,Math.PI*2);ctx.fill();
+    ctx.shadowBlur=0;
+
+    // Body (ellipse)
+    ctx.fillStyle='#4a5a3a';
+    ctx.beginPath();ctx.ellipse(cx,cy,10,7,0,0,Math.PI*2);ctx.fill();
+    // Abdomen stripes
+    ctx.fillStyle='#5a6a4a';
+    ctx.fillRect(cx-4,cy-1,3,3);
+    ctx.fillRect(cx+2,cy-2,3,3);
+
+    // Zombie eyes (red glow on the face)
+    ctx.fillStyle='#f22';ctx.shadowColor='#f22';ctx.shadowBlur=8;
+    ctx.beginPath();ctx.arc(cx-5,cy-3,3,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(cx+5,cy-3,3,0,Math.PI*2);ctx.fill();
+    ctx.shadowBlur=0;
+    ctx.fillStyle='#400';
+    ctx.beginPath();ctx.arc(cx-4,cy-3,1.5,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(cx+6,cy-3,1.5,0,Math.PI*2);ctx.fill();
+
+    // Antennae
+    ctx.strokeStyle='#3a4a2a';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(cx-3,cy-7);ctx.lineTo(cx-8,cy-14);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(cx+3,cy-7);ctx.lineTo(cx+8,cy-14);ctx.stroke();
+  }
+}
+
+function drawObstacles(){
+  for(const o of obstacles){
+    const ox=Math.round(o.x),oy=Math.round(o.y);
+    if(o.type==='spike'){
+      // Spike
+      ctx.fillStyle='#5a4a3a';
+      ctx.beginPath();ctx.moveTo(ox,oy+o.h);ctx.lineTo(ox+o.w/2,oy);ctx.lineTo(ox+o.w,oy+o.h);ctx.closePath();ctx.fill();
+      ctx.fillStyle='#7a6a4a';
+      ctx.beginPath();ctx.moveTo(ox+2,oy+o.h);ctx.lineTo(ox+o.w/2,oy+4);ctx.lineTo(ox+o.w/2,oy+o.h);ctx.closePath();ctx.fill();
+      // Red tip
+      ctx.fillStyle='#a44';
+      ctx.beginPath();ctx.moveTo(ox+o.w/2-2,oy);ctx.lineTo(ox+o.w/2+2,oy);ctx.lineTo(ox+o.w/2+2,oy+6);ctx.lineTo(ox+o.w/2-2,oy+6);ctx.closePath();ctx.fill();
+    }else{
+      // Rock
+      ctx.fillStyle='#4a4a4a';
+      ctx.beginPath();ctx.ellipse(ox+o.w/2,oy+o.h/2,o.w/2,o.h/2,0,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#5a5a5a';
+      ctx.beginPath();ctx.ellipse(ox+o.w/2-2,oy+o.h/2-3,o.w/3,o.h/3,0,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#3a3a3a';
+      ctx.beginPath();ctx.ellipse(ox+o.w/2+3,oy+o.h/2+2,o.w/4,o.h/4,0,0,Math.PI*2);ctx.fill();
+    }
+  }
+}
+
+function drawHUD(){
+  // HP
+  ctx.font='14px monospace';ctx.textAlign='left';
+  for(let i=0;i<maxHp;i++){
+    ctx.fillStyle=i<hp?'#f44':'#333';
+    ctx.fillText('♡',15+i*20,28);
+  }
+
+  // Score
+  ctx.fillStyle='#fff';ctx.font='bold 18px monospace';ctx.textAlign='right';
+  ctx.fillText(score,W-15,28);
+
+  // Combo
+  if(combo>=3){
+    ctx.fillStyle='#ff0';ctx.font='bold 13px monospace';ctx.textAlign='center';
+    ctx.fillText('x'+combo+' COMBO!',W/2,55);
+  }
+}
+
+function drawTitleScreen(){
+  // Preview frog
+  drawFrog();
+
+  ctx.fillStyle='#4a8a2a';ctx.font='bold 30px monospace';ctx.textAlign='center';
+  ctx.fillText('FROG IN A CAVE',W/2,180);
+
+  ctx.fillStyle='#6aaa3a';ctx.font='bold 16px monospace';
+  ctx.fillText('Hop through a dark cave full of',W/2,215);
+  ctx.fillText('zombie flies and deadly traps!',W/2,235);
+
+  ctx.fillStyle='#aaa';ctx.font='14px monospace';
+  ctx.fillText('↑ / Space  Jump    Z / X  Tongue Attack',W/2,280);
+
+  ctx.fillStyle='#888';ctx.font='13px monospace';
+  ctx.fillText('Tongue combo: hit flies quickly for bonus points!',W/2,310);
+
+  ctx.fillStyle='#666';ctx.font='13px monospace';
+  if(Math.floor(frame/40)%2===0)ctx.fillText('Press SPACE to start',W/2,370);
+
+  if(bestScore>0){
+    ctx.fillStyle='#f7971e';ctx.font='14px monospace';
+    ctx.fillText('Best: '+bestScore,W/2,410);
+  }
+}
+
+function drawGameOver(){
+  ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(0,0,W,H);
+
+  ctx.fillStyle='#f44';ctx.font='bold 32px monospace';ctx.textAlign='center';
+  ctx.fillText('GAME OVER',W/2,260);
+
+  ctx.fillStyle='#fff';ctx.font='20px monospace';
+  ctx.fillText('Score: '+score,W/2,310);
+
+  if(score>=bestScore&&score>0){
+    ctx.fillStyle='#ff0';ctx.font='16px monospace';
+    ctx.fillText('NEW BEST!',W/2,345);
+  }
+
+  ctx.fillStyle='#f7971e';ctx.font='16px monospace';
+  ctx.fillText('Best: '+bestScore,W/2,375);
+
+  ctx.fillStyle='#888';ctx.font='14px monospace';
+  if(Math.floor(frame/40)%2===0)ctx.fillText('Click to restart',W/2,420);
+}
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  drawBackground();
+
+  if(state==='playing'||state==='dead'){
+    drawObstacles();
+    drawFlies();
+    drawFrog();
+    drawHUD();
+  }
+
+  if(state==='title')drawTitleScreen();
+  if(state==='dead')drawGameOver();
+
+  drawParticles();
+}
+
+// ─── LOOP ───────────────────────────────────────────────────
+function loop(){
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+window.addEventListener('keydown',e=>{
+  if(e.code==='Space'||e.key==='Enter'){
+    if(state==='dead'){state='title';return;}
+    if(state==='title'){state='playing';resetGame();return;}
+  }
+});
+
+resetGame();
+loop();
+</script>
+</body>
+</html>
